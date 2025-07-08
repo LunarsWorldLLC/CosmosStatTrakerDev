@@ -232,7 +232,7 @@ public class StatTrakManager implements TerminableModule {
                         ItemStack check = item.clone();
                         check.setAmount(1);
 
-                        if (check.equals(plugin.getRemoverItemStack())) {
+                        if (plugin.isRemoverItem(check)) {
                             ItemStack removedTraker = removeTrakerFromItem(
                                     cmd.sender(),
                                     cmd.sender().getInventory().getItemInMainHand()
@@ -399,7 +399,7 @@ public class StatTrakManager implements TerminableModule {
 
                         ItemStack check = cursor.clone();
                         check.setAmount(1);
-                        if (check.equals(plugin.getRemoverItemStack())) {
+                        if (plugin.isRemoverItem(check)) {
                             ItemStack current = event.getCurrentItem();
                             ItemStack removedTraker = removeTrakerFromItem(player, current);
                             if (removedTraker != null) {

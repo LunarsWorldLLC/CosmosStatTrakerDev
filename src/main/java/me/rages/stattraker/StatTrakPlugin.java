@@ -7,6 +7,7 @@ import me.lucko.helper.plugin.ap.Plugin;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -26,7 +27,7 @@ public final class StatTrakPlugin extends ExtendedJavaPlugin {
     private ItemStack removerItemStack;
     public static Set<NamespacedKey> TRACKER_KEYS = new HashSet<>();
 
-    private ImmutableSet<Material> validItems = ImmutableSet.of(
+    private final ImmutableSet<Material> validItems = ImmutableSet.of(
             Material.DIAMOND_AXE, Material.NETHERITE_AXE, Material.IRON_AXE,
             Material.DIAMOND_SWORD, Material.NETHERITE_SWORD, Material.IRON_SWORD,
             Material.WOODEN_SWORD, Material.CROSSBOW, Material.BOW, Material.TRIDENT,
@@ -49,6 +50,24 @@ public final class StatTrakPlugin extends ExtendedJavaPlugin {
 
     public ItemStack getRemoverItemStack() {
         return removerItemStack;
+    }
+
+    public boolean isRemoverItem(ItemStack item) {
+        if (item == null || item.getType().isAir()) return false;
+        if (!item.hasItemMeta() || !removerItemStack.hasItemMeta()) return false;
+
+        ItemMeta meta = item.getItemMeta();
+        ItemMeta removerMeta = removerItemStack.getItemMeta();
+
+        // Compare type
+        if (item.getType() != removerItemStack.getType()) return false;
+
+        // Compare display name
+        if (meta.hasDisplayName() && removerMeta.hasDisplayName()) {
+            return meta.getDisplayName().equals(removerMeta.getDisplayName());
+        } else {
+            return false;
+        }
     }
 
     public NamespacedKey getStatTrakItemKey() {
