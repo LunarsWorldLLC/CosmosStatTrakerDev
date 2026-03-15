@@ -28,7 +28,7 @@ stat-trak-arrows-shot:
 stat-trak-bossmob:
   item-name: "&7[&9&lBOSSMOB TRAKER &7]"
   item-lore:
-    - "&7Click this item on top of a sword or axe to start tracking stats."
+    - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
   trak-lore: "&7Boss Mobs Killed: &f%amount%"
   items:
     - DIAMOND_SWORD
@@ -37,19 +37,19 @@ stat-trak-fish:
   FISH_STREAK:
     item-name: "&7[&9&lFISH STREAK TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
     trak-lore: "&7Fish Streaks: &f%amount%"
 
 stat-trak-armor:
   HITS_TAKEN:
     item-name: "&7[&9&lHITS TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
     trak-lore: "&7Hits Taken: &f%amount%"
   DAMAGE_TAKEN:
     item-name: "&7[&9&lHITS TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
     trak-lore: "&7Damage Taken: &f%amount%"
 
 # List of available entity types to track
@@ -59,17 +59,17 @@ stat-trak-entities:
   STACKER:
     item-name: "&7[&b&lSTACKER TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
     trak-lore: "&bStacked Mobs Killed: &f%amount%"
   ZOMBIE:
     item-name: "&7[&b&lZOMBIE TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
     trak-lore: "&bZombies Killed: &f%amount%"
   SKELETON:
     item-name: "&7[&7&lSKELETON TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
       - ""
       - "&f&lValid Items:"
       - "&7- Diamond Sword"
@@ -78,7 +78,7 @@ stat-trak-entities:
   PLAYER:
     item-name: "&7[&4&lPLAYER TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
       - ""
       - "&f&lValid Items:"
       - "&7- Diamond Sword"
@@ -89,7 +89,7 @@ stat-trak-augments:
   FARMING:
     item-name: "&7[&4&lFARMING AUGMENT TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
       - ""
       - "&f&lValid Items:"
       - "&7- Diamond Sword"
@@ -98,7 +98,7 @@ stat-trak-augments:
   TOOLS:
     item-name: "&7[&4&lTOOL AUGMENT TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
       - ""
       - "&f&lValid Items:"
       - "&7- Diamond Sword"
@@ -107,7 +107,7 @@ stat-trak-augments:
   FISHING:
     item-name: "&7[&4&lFISHING AUGMENT TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
       - ""
       - "&f&lValid Items:"
       - "&7- Diamond Sword"
@@ -116,7 +116,7 @@ stat-trak-augments:
   WEAPON:
     item-name: "&7[&4&lWEAPON AUGMENT TRAKER &7]"
     item-lore:
-      - "&7Click this item on top of a sword or axe to start tracking stats."
+      - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
       - ""
       - "&f&lValid Items:"
       - "&7- Diamond Sword"

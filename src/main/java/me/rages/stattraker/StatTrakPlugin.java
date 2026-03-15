@@ -31,7 +31,10 @@ public final class StatTrakPlugin extends ExtendedJavaPlugin {
             Material.DIAMOND_AXE, Material.NETHERITE_AXE, Material.IRON_AXE,
             Material.DIAMOND_SWORD, Material.NETHERITE_SWORD, Material.IRON_SWORD,
             Material.WOODEN_SWORD, Material.CROSSBOW, Material.BOW, Material.TRIDENT,
-            Material.FISHING_ROD, Material.MACE
+            Material.FISHING_ROD, Material.MACE,
+            Material.WOODEN_SPEAR, Material.STONE_SPEAR, Material.GOLDEN_SPEAR,
+            Material.COPPER_SPEAR, Material.IRON_SPEAR, Material.DIAMOND_SPEAR,
+            Material.NETHERITE_SPEAR
     );
 
     @Override
