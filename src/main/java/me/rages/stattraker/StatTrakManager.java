@@ -11,8 +11,7 @@ import me.lucko.helper.terminable.TerminableConsumer;
 import me.lucko.helper.terminable.module.TerminableModule;
 import me.lucko.helper.text3.Text;
 import me.lucko.helper.utils.Players;
-import me.rages.augments.AugmentType;
-import me.rages.augments.event.AugmentRewardEvent;
+import org.bukkit.event.Event;
 import me.rages.stattraker.trackers.Traker;
 import me.rages.stattraker.trackers.impl.*;
 import org.apache.commons.lang3.EnumUtils;
@@ -125,11 +124,9 @@ public class StatTrakManager implements TerminableModule {
         });
 
         plugin.getConfig().getConfigurationSection("stat-trak-augments").getKeys(false)
-                .stream().map(AugmentType::valueOf)
-                .filter(Objects::nonNull)
-                .forEach(augmentType -> {
-                    AugmentTraker augmentTraker = AugmentTraker.create(augmentType, plugin);
-                    augmentTrakerMap.put(augmentType.name(), augmentTraker);
+                .forEach(augmentName -> {
+                    AugmentTraker augmentTraker = AugmentTraker.create(augmentName, plugin);
+                    augmentTrakerMap.put(augmentName, augmentTraker);
                     trakersSet.add(augmentTraker);
                 });
 
@@ -463,17 +460,28 @@ public class StatTrakManager implements TerminableModule {
                 }).bindWith(consumer);
 
         if (plugin.getServer().getPluginManager().isPluginEnabled("Augments")) {
-            Events.subscribe(AugmentRewardEvent.class)
-                    .filter(event -> event.getAugmentType() != null)
-                    .handler(event -> {
-                        Player player = event.getPlayer();
-                        ItemStack itemStack = player.getInventory().getItemInMainHand();
-                        AugmentTraker augmentTraker = augmentTrakerMap.get(event.getAugmentType().name());
-                        if (augmentTraker != null && itemStack.hasItemMeta()
-                                && itemStack.getItemMeta().getPersistentDataContainer().has(augmentTraker.getItemKey())) {
-                            player.getInventory().setItemInMainHand(augmentTraker.incrementLore(itemStack, 1));
-                        }
-                    }).bindWith(consumer);
+            try {
+                Class<? extends Event> augmentEventClass = (Class<? extends Event>) Class.forName("me.rages.augments.event.AugmentRewardEvent");
+                Events.subscribe(augmentEventClass)
+                        .handler(event -> {
+                            try {
+                                Object augmentType = event.getClass().getMethod("getAugmentType").invoke(event);
+                                if (augmentType == null) return;
+                                Player player = (Player) event.getClass().getMethod("getPlayer").invoke(event);
+                                ItemStack itemStack = player.getInventory().getItemInMainHand();
+                                String augmentName = (String) augmentType.getClass().getMethod("name").invoke(augmentType);
+                                AugmentTraker augmentTraker = augmentTrakerMap.get(augmentName);
+                                if (augmentTraker != null && itemStack.hasItemMeta()
+                                        && itemStack.getItemMeta().getPersistentDataContainer().has(augmentTraker.getItemKey())) {
+                                    player.getInventory().setItemInMainHand(augmentTraker.incrementLore(itemStack, 1));
+                                }
+                            } catch (Exception e) {
+                                plugin.getLogger().warning("Failed to handle AugmentRewardEvent: " + e.getMessage());
+                            }
+                        }).bindWith(consumer);
+            } catch (ClassNotFoundException e) {
+                plugin.getLogger().warning("Augments plugin enabled but event class not found.");
+            }
         }
 
         Map<UUID, Map<BlockTraker, Integer>> cachedAmounts = new HashMap<>();

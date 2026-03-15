@@ -2,7 +2,6 @@ package me.rages.stattraker.trackers.impl;
 
 import me.lucko.helper.item.ItemStackBuilder;
 import me.lucko.helper.text3.Text;
-import me.rages.augments.AugmentType;
 import me.rages.stattraker.StatTrakPlugin;
 import me.rages.stattraker.trackers.Traker;
 import org.bukkit.Material;
@@ -20,26 +19,26 @@ import java.util.Objects;
  **/
 public class AugmentTraker extends Traker {
 
-    public AugmentTraker(AugmentType augmentType, StatTrakPlugin plugin) {
+    public AugmentTraker(String augmentName, StatTrakPlugin plugin) {
         ItemStackBuilder builder = ItemStackBuilder.of(Material.NAME_TAG)
-                .name(plugin.getConfig().getString("stat-trak-augments." + augmentType.name() + ".item-name"))
-                .lore(plugin.getConfig().getStringList("stat-trak-augments." + augmentType.name() + ".item-lore"))
-                .transformMeta(itemMeta -> itemMeta.getPersistentDataContainer().set(plugin.getStatTrakItemKey(), PersistentDataType.STRING, augmentType.name()));
+                .name(plugin.getConfig().getString("stat-trak-augments." + augmentName + ".item-name"))
+                .lore(plugin.getConfig().getStringList("stat-trak-augments." + augmentName + ".item-lore"))
+                .transformMeta(itemMeta -> itemMeta.getPersistentDataContainer().set(plugin.getStatTrakItemKey(), PersistentDataType.STRING, augmentName));
 
         setItemStack(builder.build());
-        setItemKey(new NamespacedKey(plugin, augmentType.name()));
-        setDataLore(plugin.getConfig().getString("stat-trak-augments." + augmentType.name() + ".trak-lore"));
+        setItemKey(new NamespacedKey(plugin, augmentName));
+        setDataLore(plugin.getConfig().getString("stat-trak-augments." + augmentName + ".trak-lore"));
         setPrefixLore(Text.colorize(getDataLore().split("%amount%")[0]));
 
-        plugin.getConfig().getStringList("stat-trak-augments." + augmentType.name() + ".items")
+        plugin.getConfig().getStringList("stat-trak-augments." + augmentName + ".items")
                 .stream().map(str -> Material.valueOf(str.toUpperCase()))
                 .filter(Objects::nonNull)
                 .forEach(material -> getAcceptableItems().add(material));
 
     }
 
-    public static AugmentTraker create(AugmentType entityType, StatTrakPlugin plugin) {
-        return new AugmentTraker(entityType, plugin);
+    public static AugmentTraker create(String augmentName, StatTrakPlugin plugin) {
+        return new AugmentTraker(augmentName, plugin);
     }
 
     public ItemStack incrementLore(ItemStack itemStack, int amount) {
@@ -60,4 +59,3 @@ public class AugmentTraker extends Traker {
     }
 
 }
-
