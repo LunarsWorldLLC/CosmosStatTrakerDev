@@ -30,6 +30,7 @@ import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
@@ -305,6 +306,10 @@ public class StatTrakManager implements TerminableModule {
                     }
                 }).bindWith(consumer);
 
+        // Arrow shot batching: bump a counter per shot (cheap), rebuild lore on a timer/quit/slot-switch.
+        // Avoids legacy String lore regex parsing on every shot; player still sees the count update within ~1s.
+        Map<UUID, Integer> cachedArrowAmounts = new HashMap<>();
+
         Events.subscribe(EntityShootBowEvent.class)
                 .filter(event -> event.getEntity() instanceof Player)
                 .handler(event -> {
@@ -314,10 +319,7 @@ public class StatTrakManager implements TerminableModule {
                         ArrowShotTraker arrowShotTraker = this.arrowShotTraker;
                         if (arrowShotTraker != null && itemStack.hasItemMeta()
                                 && itemStack.getItemMeta().getPersistentDataContainer().has(arrowShotTraker.getItemKey())) {
-                            player.getInventory().setItem(
-                                    event.getHand(),
-                                    arrowShotTraker.incrementLore(itemStack, 1)
-                            );
+                            cachedArrowAmounts.merge(player.getUniqueId(), 1, Integer::sum);
                         }
                     }
                 }).bindWith(consumer);
@@ -542,6 +544,66 @@ public class StatTrakManager implements TerminableModule {
             }
         }, 15L, TimeUnit.SECONDS, 15L, TimeUnit.SECONDS).bindWith(consumer);
 
+        // Flush arrow counter cache once per second: scan main + off hand for the tracked bow and apply pending count.
+        Schedulers.sync().runRepeating(() -> {
+            if (cachedArrowAmounts.isEmpty() || arrowShotTraker == null) return;
+            cachedArrowAmounts.entrySet().removeIf(entry -> {
+                Optional<Player> opt = Players.get(entry.getKey());
+                if (opt.isEmpty()) return true; // drop offline players' uncommitted counts (also handled in quit listener)
+                Player p = opt.get();
+                return flushArrowCounter(p, entry.getValue());
+            });
+        }, 20L, 20L).bindWith(consumer);
+
+        // Commit any pending count immediately on quit so it isn't lost.
+        Events.subscribe(PlayerQuitEvent.class)
+                .handler(event -> {
+                    Integer pending = cachedArrowAmounts.remove(event.getPlayer().getUniqueId());
+                    if (pending != null && pending > 0 && arrowShotTraker != null) {
+                        flushArrowCounter(event.getPlayer(), pending);
+                    }
+                }).bindWith(consumer);
+
+        // Flush before the player swaps off the bow so counts don't leak onto the next item.
+        Events.subscribe(PlayerItemHeldEvent.class)
+                .filter(event -> cachedArrowAmounts.containsKey(event.getPlayer().getUniqueId()))
+                .handler(event -> {
+                    Player player = event.getPlayer();
+                    ItemStack previous = player.getInventory().getItem(event.getPreviousSlot());
+                    if (hasArrowTracker(previous)) {
+                        Integer pending = cachedArrowAmounts.remove(player.getUniqueId());
+                        if (pending != null && pending > 0) {
+                            player.getInventory().setItem(
+                                    event.getPreviousSlot(),
+                                    arrowShotTraker.incrementLore(previous, pending)
+                            );
+                        }
+                    }
+                }).bindWith(consumer);
+    }
+
+    /**
+     * Apply pending arrow count to whichever hand holds the tracked bow.
+     * Returns true if the entry should be removed from the cache (committed or no eligible bow held).
+     */
+    private boolean flushArrowCounter(Player player, int amount) {
+        if (amount <= 0 || arrowShotTraker == null) return true;
+        ItemStack main = player.getInventory().getItemInMainHand();
+        if (hasArrowTracker(main)) {
+            player.getInventory().setItemInMainHand(arrowShotTraker.incrementLore(main, amount));
+            return true;
+        }
+        ItemStack off = player.getInventory().getItemInOffHand();
+        if (hasArrowTracker(off)) {
+            player.getInventory().setItemInOffHand(arrowShotTraker.incrementLore(off, amount));
+            return true;
+        }
+        return false; // bow not held this tick — keep accumulating, retry next flush
+    }
+
+    private boolean hasArrowTracker(ItemStack itemStack) {
+        return itemStack != null && itemStack.hasItemMeta()
+                && itemStack.getItemMeta().getPersistentDataContainer().has(arrowShotTraker.getItemKey());
     }
 
     private void applyEntityTracker(Map<UUID, Long> cooldownMap, Player player, ItemStack itemStack, EntityTraker entityTraker) {
