@@ -325,21 +325,50 @@ public class StatTrakManager implements TerminableModule {
                 }).bindWith(consumer);
 
         EquipmentSlot[] armorSlots = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.HAND, EquipmentSlot.OFF_HAND};
+
+        // Armor tracker batching: bump per-(player, tracker) counters per hit, rebuild lore on a timer/quit.
+        // Avoids legacy String lore regex parsing on every hit across up to 6 armor slots in PvP.
+        Map<UUID, Map<ArmorTraker, Integer>> cachedArmorAmounts = new HashMap<>();
+
         Events.subscribe(EntityDamageByEntityEvent.class)
                 .filter(event -> event.getEntity() instanceof Player)
                 .filter(event -> event.getDamager() instanceof Player)
                 .handler(event -> {
                     Player player = (Player) event.getEntity();
+                    UUID id = player.getUniqueId();
+                    int finalDamage = (int) event.getFinalDamage();
                     Arrays.stream(armorSlots).map(equipmentSlot -> player.getInventory().getItem(equipmentSlot))
                             .filter(itemStack -> itemStack.hasItemMeta()).forEach(itemStack -> {
                                 ItemMeta meta = itemStack.getItemMeta();
                                 armorTrakerMap.values().stream()
                                         .filter(traker -> meta.getPersistentDataContainer().has(traker.getItemKey()))
-                                        .forEach(traker -> traker.incrementLore(itemStack, traker.isHits() ? 1 :
-                                                (int) event.getFinalDamage()
-                                        ));
+                                        .forEach(traker -> {
+                                            int delta = traker.isHits() ? 1 : finalDamage;
+                                            cachedArmorAmounts.computeIfAbsent(id, k -> new HashMap<>())
+                                                    .merge(traker, delta, Integer::sum);
+                                        });
                             });
 
+                }).bindWith(consumer);
+
+        // Flush armor counters every second.
+        Schedulers.sync().runRepeating(() -> {
+            if (cachedArmorAmounts.isEmpty()) return;
+            cachedArmorAmounts.entrySet().removeIf(entry -> {
+                Optional<Player> opt = Players.get(entry.getKey());
+                if (opt.isEmpty()) return true;
+                flushArmorCounters(opt.get(), entry.getValue(), armorSlots);
+                return entry.getValue().isEmpty();
+            });
+        }, 20L, 20L).bindWith(consumer);
+
+        // Commit pending armor counts on quit.
+        Events.subscribe(PlayerQuitEvent.class)
+                .handler(event -> {
+                    Map<ArmorTraker, Integer> pending = cachedArmorAmounts.remove(event.getPlayer().getUniqueId());
+                    if (pending != null && !pending.isEmpty()) {
+                        flushArmorCounters(event.getPlayer(), pending, armorSlots);
+                    }
                 }).bindWith(consumer);
 
         Events.subscribe(InventoryClickEvent.class, EventPriority.HIGH)
@@ -604,6 +633,34 @@ public class StatTrakManager implements TerminableModule {
     private boolean hasArrowTracker(ItemStack itemStack) {
         return itemStack != null && itemStack.hasItemMeta()
                 && itemStack.getItemMeta().getPersistentDataContainer().has(arrowShotTraker.getItemKey());
+    }
+
+    /**
+     * Apply pending armor-tracker counts to whichever slot still holds each tracker.
+     * Removes committed (tracker -> amount) entries from the per-player map; leaves any whose
+     * armor piece is no longer worn so the count is retried on the next flush.
+     */
+    private void flushArmorCounters(Player player, Map<ArmorTraker, Integer> pending, EquipmentSlot[] armorSlots) {
+        if (pending.isEmpty()) return;
+        Iterator<Map.Entry<ArmorTraker, Integer>> it = pending.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<ArmorTraker, Integer> entry = it.next();
+            ArmorTraker traker = entry.getKey();
+            int amount = entry.getValue();
+            if (amount <= 0) {
+                it.remove();
+                continue;
+            }
+            for (EquipmentSlot slot : armorSlots) {
+                ItemStack item = player.getInventory().getItem(slot);
+                if (item != null && item.hasItemMeta()
+                        && item.getItemMeta().getPersistentDataContainer().has(traker.getItemKey())) {
+                    player.getInventory().setItem(slot, traker.incrementLore(item, amount));
+                    it.remove();
+                    break;
+                }
+            }
+        }
     }
 
     private void applyEntityTracker(Map<UUID, Long> cooldownMap, Player player, ItemStack itemStack, EntityTraker entityTraker) {
