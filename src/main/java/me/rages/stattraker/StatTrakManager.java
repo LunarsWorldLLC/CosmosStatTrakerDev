@@ -330,6 +330,13 @@ public class StatTrakManager implements TerminableModule {
         // Avoids legacy String lore regex parsing on every hit across up to 6 armor slots in PvP.
         Map<UUID, Map<ArmorTraker, Integer>> cachedArmorAmounts = new HashMap<>();
 
+        // Entity-kill batching: bump per-(player, EntityTraker) counters per kill, rebuild lore on a timer/quit/slot.
+        // Replaces the per-kill incrementLore call (Paper CraftChatMessage.fromString regex hot path) that lagged
+        // the server when players spam-shot crossbows into mob farms. Covers regular entity trackers + stacker.
+        Map<UUID, Map<EntityTraker, Integer>> cachedEntityKills = new HashMap<>();
+        // Boss-mob kills tracked separately because BossMobTraker is not an EntityTraker subtype.
+        Map<UUID, Integer> cachedBossKills = new HashMap<>();
+
         Events.subscribe(EntityDamageByEntityEvent.class)
                 .filter(event -> event.getEntity() instanceof Player)
                 .filter(event -> event.getDamager() instanceof Player)
@@ -351,23 +358,87 @@ public class StatTrakManager implements TerminableModule {
 
                 }).bindWith(consumer);
 
-        // Flush armor counters every second.
+        // Flush armor + entity-kill + boss counters every second on one scheduler.
         Schedulers.sync().runRepeating(() -> {
-            if (cachedArmorAmounts.isEmpty()) return;
-            cachedArmorAmounts.entrySet().removeIf(entry -> {
-                Optional<Player> opt = Players.get(entry.getKey());
-                if (opt.isEmpty()) return true;
-                flushArmorCounters(opt.get(), entry.getValue(), armorSlots);
-                return entry.getValue().isEmpty();
-            });
+            if (!cachedArmorAmounts.isEmpty()) {
+                cachedArmorAmounts.entrySet().removeIf(entry -> {
+                    Optional<Player> opt = Players.get(entry.getKey());
+                    if (opt.isEmpty()) return true;
+                    flushArmorCounters(opt.get(), entry.getValue(), armorSlots);
+                    return entry.getValue().isEmpty();
+                });
+            }
+            if (!cachedEntityKills.isEmpty()) {
+                cachedEntityKills.entrySet().removeIf(entry -> {
+                    Optional<Player> opt = Players.get(entry.getKey());
+                    if (opt.isEmpty()) return true;
+                    flushEntityKills(opt.get(), entry.getValue());
+                    return entry.getValue().isEmpty();
+                });
+            }
+            if (!cachedBossKills.isEmpty()) {
+                cachedBossKills.entrySet().removeIf(entry -> {
+                    Optional<Player> opt = Players.get(entry.getKey());
+                    if (opt.isEmpty()) return true;
+                    return flushBossKills(opt.get(), entry.getValue());
+                });
+            }
         }, 20L, 20L).bindWith(consumer);
 
-        // Commit pending armor counts on quit.
+        // Commit pending armor + entity + boss counts on quit so they aren't lost.
         Events.subscribe(PlayerQuitEvent.class)
                 .handler(event -> {
-                    Map<ArmorTraker, Integer> pending = cachedArmorAmounts.remove(event.getPlayer().getUniqueId());
-                    if (pending != null && !pending.isEmpty()) {
-                        flushArmorCounters(event.getPlayer(), pending, armorSlots);
+                    UUID id = event.getPlayer().getUniqueId();
+                    Map<ArmorTraker, Integer> pendingArmor = cachedArmorAmounts.remove(id);
+                    if (pendingArmor != null && !pendingArmor.isEmpty()) {
+                        flushArmorCounters(event.getPlayer(), pendingArmor, armorSlots);
+                    }
+                    Map<EntityTraker, Integer> pendingEntity = cachedEntityKills.remove(id);
+                    if (pendingEntity != null && !pendingEntity.isEmpty()) {
+                        flushEntityKills(event.getPlayer(), pendingEntity);
+                    }
+                    Integer pendingBoss = cachedBossKills.remove(id);
+                    if (pendingBoss != null && pendingBoss > 0) {
+                        flushBossKills(event.getPlayer(), pendingBoss);
+                    }
+                }).bindWith(consumer);
+
+        // Flush before the player swaps off the weapon so kill counts don't leak onto the next item.
+        Events.subscribe(PlayerItemHeldEvent.class)
+                .filter(event -> cachedEntityKills.containsKey(event.getPlayer().getUniqueId())
+                        || cachedBossKills.containsKey(event.getPlayer().getUniqueId()))
+                .handler(event -> {
+                    Player player = event.getPlayer();
+                    ItemStack previous = player.getInventory().getItem(event.getPreviousSlot());
+                    if (previous == null || !previous.hasItemMeta()) return;
+                    PersistentDataContainer pdc = previous.getItemMeta().getPersistentDataContainer();
+
+                    Map<EntityTraker, Integer> pendingEntity = cachedEntityKills.get(player.getUniqueId());
+                    if (pendingEntity != null && !pendingEntity.isEmpty()) {
+                        Iterator<Map.Entry<EntityTraker, Integer>> it = pendingEntity.entrySet().iterator();
+                        ItemStack current = previous;
+                        while (it.hasNext()) {
+                            Map.Entry<EntityTraker, Integer> entry = it.next();
+                            if (pdc.has(entry.getKey().getItemKey()) && entry.getValue() > 0) {
+                                current = entry.getKey().incrementLore(current, entry.getValue());
+                                it.remove();
+                            }
+                        }
+                        if (current != previous) {
+                            player.getInventory().setItem(event.getPreviousSlot(), current);
+                            // re-read pdc since meta changed
+                            pdc = current.getItemMeta().getPersistentDataContainer();
+                        }
+                        if (pendingEntity.isEmpty()) cachedEntityKills.remove(player.getUniqueId());
+                    }
+
+                    Integer pendingBoss = cachedBossKills.get(player.getUniqueId());
+                    if (pendingBoss != null && pendingBoss > 0 && bossMobTraker != null
+                            && pdc.has(bossMobTraker.getItemKey())) {
+                        ItemStack updated = bossMobTraker.incrementLore(
+                                player.getInventory().getItem(event.getPreviousSlot()), pendingBoss);
+                        player.getInventory().setItem(event.getPreviousSlot(), updated);
+                        cachedBossKills.remove(player.getUniqueId());
                     }
                 }).bindWith(consumer);
 
@@ -457,21 +528,21 @@ public class StatTrakManager implements TerminableModule {
 
                 }).bindWith(consumer);
 
-        // Declare a map to store player UUIDs and their last usage time
-        Map<UUID, Long> cooldownMap = new HashMap<>();
-
         Events.subscribe(EntityDeathEvent.class)
                 .filter(event -> event.getEntity().getKiller() != null)
                 .handler(event -> {
                     Player player = event.getEntity().getKiller();
                     ItemStack itemStack = player.getInventory().getItemInMainHand();
+                    if (itemStack == null || !itemStack.hasItemMeta()) return;
+
+                    UUID id = player.getUniqueId();
+                    PersistentDataContainer pdc = itemStack.getItemMeta().getPersistentDataContainer();
                     EntityType type = event.getEntity().getType();
 
-                    if (slayerBossKey != null) {
-                        if (event.getEntity().getPersistentDataContainer().has(slayerBossKey) &&
-                                itemStack.hasItemMeta() && itemStack.getItemMeta().getPersistentDataContainer().has(bossMobTraker.getItemKey())) {
-                            player.getInventory().setItemInMainHand(bossMobTraker.incrementLore(itemStack, 1));
-                        }
+                    if (slayerBossKey != null && bossMobTraker != null
+                            && event.getEntity().getPersistentDataContainer().has(slayerBossKey)
+                            && pdc.has(bossMobTraker.getItemKey())) {
+                        cachedBossKills.merge(id, 1, Integer::sum);
                     }
 
                     EntityTraker entityTraker = entityTrakerMap.get(type.name());
@@ -481,12 +552,14 @@ public class StatTrakManager implements TerminableModule {
                                 type.name())
                         );
                     }
+                    if (entityTraker != null && pdc.has(entityTraker.getItemKey())) {
+                        cachedEntityKills.computeIfAbsent(id, k -> new HashMap<>())
+                                .merge(entityTraker, 1, Integer::sum);
+                    }
 
-                    if (itemStack.hasItemMeta()) {
-                        applyEntityTracker(cooldownMap, player, itemStack, entityTraker);
-                        if (stackerTracker != null && itemStack.getItemMeta().getPersistentDataContainer().has(stackerTracker.getItemKey())) {
-                            player.getInventory().setItemInMainHand(stackerTracker.incrementLore(itemStack, 1));
-                        }
+                    if (stackerTracker != null && pdc.has(stackerTracker.getItemKey())) {
+                        cachedEntityKills.computeIfAbsent(id, k -> new HashMap<>())
+                                .merge(stackerTracker, 1, Integer::sum);
                     }
                 }).bindWith(consumer);
 
@@ -663,21 +736,63 @@ public class StatTrakManager implements TerminableModule {
         }
     }
 
-    private void applyEntityTracker(Map<UUID, Long> cooldownMap, Player player, ItemStack itemStack, EntityTraker entityTraker) {
-        if (entityTraker != null && itemStack.getItemMeta().getPersistentDataContainer().has(entityTraker.getItemKey())) {
-//                        player.getInventory().setItemInMainHand(entityTraker.incrementLore(itemStack, 1));
-            UUID playerId = player.getUniqueId();
-            long currentTime = System.currentTimeMillis();
-            long cooldownTime = cooldownMap.getOrDefault(playerId, 0L);
+    /**
+     * Apply pending entity-kill counts to whichever held slot still carries each tracker.
+     * Scans main + off hand; leaves un-applied entries in the map so the count is retried
+     * next flush if the player has temporarily put the weapon away.
+     */
+    private void flushEntityKills(Player player, Map<EntityTraker, Integer> pending) {
+        if (pending.isEmpty()) return;
+        ItemStack main = player.getInventory().getItemInMainHand();
+        ItemStack off = player.getInventory().getItemInOffHand();
+        boolean mainChanged = false;
+        boolean offChanged = false;
 
-            // Check if the player is still on cooldown
-            if (currentTime - cooldownTime >= 1000) {
-                // Update the cooldown time for the player
-                cooldownMap.put(playerId, currentTime);
-                // Perform the action (setting the item in the player's main hand)
-                player.getInventory().setItemInMainHand(entityTraker.incrementLore(itemStack, 1));
+        Iterator<Map.Entry<EntityTraker, Integer>> it = pending.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<EntityTraker, Integer> entry = it.next();
+            EntityTraker traker = entry.getKey();
+            int amount = entry.getValue();
+            if (amount <= 0) {
+                it.remove();
+                continue;
+            }
+            if (main != null && main.hasItemMeta()
+                    && main.getItemMeta().getPersistentDataContainer().has(traker.getItemKey())) {
+                main = traker.incrementLore(main, amount);
+                mainChanged = true;
+                it.remove();
+            } else if (off != null && off.hasItemMeta()
+                    && off.getItemMeta().getPersistentDataContainer().has(traker.getItemKey())) {
+                off = traker.incrementLore(off, amount);
+                offChanged = true;
+                it.remove();
             }
         }
+        if (mainChanged) player.getInventory().setItemInMainHand(main);
+        if (offChanged) player.getInventory().setItemInOffHand(off);
+    }
+
+    /**
+     * Apply pending boss-mob kill count to whichever held slot carries the bossmob tracker.
+     * Returns true if the entry should be removed from the cache (committed, no tracker held,
+     * or bossmob feature disabled), false to retry on the next flush.
+     */
+    private boolean flushBossKills(Player player, int amount) {
+        if (amount <= 0 || bossMobTraker == null) return true;
+        ItemStack main = player.getInventory().getItemInMainHand();
+        if (main != null && main.hasItemMeta()
+                && main.getItemMeta().getPersistentDataContainer().has(bossMobTraker.getItemKey())) {
+            player.getInventory().setItemInMainHand(bossMobTraker.incrementLore(main, amount));
+            return true;
+        }
+        ItemStack off = player.getInventory().getItemInOffHand();
+        if (off != null && off.hasItemMeta()
+                && off.getItemMeta().getPersistentDataContainer().has(bossMobTraker.getItemKey())) {
+            player.getInventory().setItemInOffHand(bossMobTraker.incrementLore(off, amount));
+            return true;
+        }
+        return false; // weapon not held — keep accumulating, retry next flush
     }
 
     private ItemStack addTrakerToItem(Traker traker, ItemStack itemStack) {

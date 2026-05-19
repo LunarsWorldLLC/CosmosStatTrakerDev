@@ -12,7 +12,6 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 
@@ -21,6 +20,10 @@ import java.util.logging.Level;
  * @since : 8/7/2022, Sunday
  **/
 public class EntityTraker extends Traker {
+
+    // Colorized once at load so the hot path (incrementLore) does not re-run Text.colorize
+    // per call. The current lore line is rebuilt by replacing %amount% in this template.
+    private final String colorizedDataLore;
 
     public EntityTraker(String entityType, StatTrakPlugin plugin) {
         if (!plugin.getConfig().contains("stat-trak-entities." + entityType + ".item-name")) {
@@ -35,6 +38,7 @@ public class EntityTraker extends Traker {
         setItemKey(new NamespacedKey(plugin, entityType));
         setDataLore(plugin.getConfig().getString("stat-trak-entities." + entityType + ".trak-lore"));
         setPrefixLore(Text.colorize(getDataLore().split("%amount%")[0]));
+        this.colorizedDataLore = Text.colorize(getDataLore());
     }
 
     public static EntityTraker create(String entityType, StatTrakPlugin plugin) {
@@ -62,21 +66,29 @@ public class EntityTraker extends Traker {
         int total = container.getOrDefault(key, PersistentDataType.INTEGER, 0) + amount;
         container.set(key, PersistentDataType.INTEGER, total);
 
-        // Update lore
+        // Rebuild only the tracker line; skip meta.setLore (the Paper hot path that runs
+        // CraftChatMessage.fromString regex on every line) when nothing actually changed.
         List<String> lore = meta.getLore();
         if (lore != null) {
-            List<String> newLore = new ArrayList<>(lore.size());
-            for (String currLore : lore) {
-                if (currLore.startsWith(getPrefixLore()) || Text.colorize(currLore).startsWith(getPrefixLore())) {
-                    newLore.add(Text.colorize(getDataLore().replace("%amount%", String.format("%,d", total))));
-                } else {
-                    newLore.add(currLore);
+            String prefix = getPrefixLore();
+            String newLine = null;
+            boolean changed = false;
+            for (int i = 0; i < lore.size(); i++) {
+                if (lore.get(i).startsWith(prefix)) {
+                    if (newLine == null) {
+                        newLine = colorizedDataLore.replace("%amount%", String.format("%,d", total));
+                    }
+                    if (!newLine.equals(lore.get(i))) {
+                        lore.set(i, newLine);
+                        changed = true;
+                    }
                 }
             }
-            meta.setLore(newLore);
+            if (changed) {
+                meta.setLore(lore);
+            }
         }
 
-        // Clear item flags and return the modified ItemStack
         itemStack.setItemMeta(meta);
         return itemStack;
     }
