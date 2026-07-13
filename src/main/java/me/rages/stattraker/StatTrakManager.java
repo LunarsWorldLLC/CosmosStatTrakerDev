@@ -58,10 +58,12 @@ public class StatTrakManager implements TerminableModule {
     private final Map<Material, BlockTraker> blockTrakerMap = new HashMap<>();
 
     private final EntityTraker stackerTracker;
+    private final EntityTraker allMobsTraker;
     private final FishTraker fishStreakTraker;
 
 
     private ArrowShotTraker arrowShotTraker;
+    private BlockTraker allBlocksTraker;
 
     private Set<Traker> trakersSet = new HashSet<>();
 
@@ -84,8 +86,10 @@ public class StatTrakManager implements TerminableModule {
         this.plugin = plugin;
         this.returnTrakerItem = plugin.getConfig().getBoolean("stack-trak-remover.return-traker", true);
         this.stackerTracker = EntityTraker.create("STACKER", plugin);
+        this.allMobsTraker = EntityTraker.create("ALL_MOBS", plugin);
         this.fishStreakTraker = FishTraker.create(plugin);
         trakersSet.add(this.stackerTracker);
+        trakersSet.add(this.allMobsTraker);
         trakersSet.add(this.fishStreakTraker);
 
 
@@ -107,6 +111,8 @@ public class StatTrakManager implements TerminableModule {
         }
 
         plugin.getConfig().getConfigurationSection("stat-trak-entities").getKeys(false).forEach(s -> {
+            // Sentinel trackers (STACKER, ALL_MOBS) live under this section but are constructed above.
+            if (s.equals("STACKER") || s.equals("ALL_MOBS")) return;
             if (EnumUtils.isValidEnum(EntityType.class, s)) {
                 EntityType entityType = EntityType.valueOf(s);
                 EntityTraker entityTraker = EntityTraker.create(s, plugin);
@@ -132,9 +138,15 @@ public class StatTrakManager implements TerminableModule {
                 });
 
         plugin.getConfig().getConfigurationSection("stat-trak-blocks").getKeys(false)
-                .stream().map(str -> BlockTraker.create(str, plugin))
-                .forEach(blockTraker -> {
-                    blockTraker.getMaterials().forEach(material -> blockTrakerMap.put(material, blockTraker));
+                .forEach(key -> {
+                    BlockTraker blockTraker = BlockTraker.create(key, plugin);
+                    if (key.equals("ALL_BLOCKS")) {
+                        // Wildcard tracker — never registered by material because its types list is empty;
+                        // event handler bumps it independently for any block break.
+                        this.allBlocksTraker = blockTraker;
+                    } else {
+                        blockTraker.getMaterials().forEach(material -> blockTrakerMap.put(material, blockTraker));
+                    }
                     trakersSet.add(blockTraker);
                 });
     }
@@ -159,6 +171,10 @@ public class StatTrakManager implements TerminableModule {
                     return Optional.ofNullable(fishStreakTraker);
                 } else if (type.toUpperCase().equals("STACKER")) {
                     return Optional.ofNullable(stackerTracker);
+                } else if (type.toUpperCase().equals("ALL_MOBS")) {
+                    return Optional.ofNullable(allMobsTraker);
+                } else if (type.toUpperCase().equals("ALL_BLOCKS")) {
+                    return Optional.ofNullable(allBlocksTraker);
                 } else if (type.toUpperCase().equals("ARROWS_SHOT")) {
                     return Optional.ofNullable(arrowShotTraker);
                 } else {
@@ -467,6 +483,10 @@ public class StatTrakManager implements TerminableModule {
                                 traker = fishStreakTraker;
                             } else if (data.equalsIgnoreCase("STACKER")) {
                                 traker = stackerTracker;
+                            } else if (data.equalsIgnoreCase("ALL_MOBS")) {
+                                traker = allMobsTraker;
+                            } else if (data.equalsIgnoreCase("ALL_BLOCKS")) {
+                                traker = allBlocksTraker;
                             } else {
                                 Material material = Material.valueOf(data);
                                 if (material != null) traker = blockTrakerMap.get(material);
@@ -561,6 +581,11 @@ public class StatTrakManager implements TerminableModule {
                         cachedEntityKills.computeIfAbsent(id, k -> new HashMap<>())
                                 .merge(stackerTracker, 1, Integer::sum);
                     }
+
+                    if (allMobsTraker != null && pdc.has(allMobsTraker.getItemKey())) {
+                        cachedEntityKills.computeIfAbsent(id, k -> new HashMap<>())
+                                .merge(allMobsTraker, 1, Integer::sum);
+                    }
                 }).bindWith(consumer);
 
         if (plugin.getServer().getPluginManager().isPluginEnabled("Augments")) {
@@ -597,14 +622,19 @@ public class StatTrakManager implements TerminableModule {
                 .handler(event -> {
                     Player player = event.getPlayer();
                     ItemStack itemStack = player.getInventory().getItemInMainHand();
+                    if (!itemStack.hasItemMeta()) return;
+                    PersistentDataContainer pdc = itemStack.getItemMeta().getPersistentDataContainer();
+                    UUID playerUUID = player.getUniqueId();
+
                     BlockTraker blockTraker = blockTrakerMap.get(event.getBlock().getType());
+                    if (blockTraker != null && pdc.has(blockTraker.getItemKey())) {
+                        cachedAmounts.computeIfAbsent(playerUUID, k -> new HashMap<>())
+                                .merge(blockTraker, 1, Integer::sum);
+                    }
 
-                    if (blockTraker != null && itemStack.hasItemMeta() && itemStack.getItemMeta().getPersistentDataContainer().has(blockTraker.getItemKey())) {
-                        UUID playerUUID = player.getUniqueId();
-                        Map<BlockTraker, Integer> playerCache = cachedAmounts.getOrDefault(playerUUID, new HashMap<>());
-
-                        playerCache.put(blockTraker, playerCache.getOrDefault(blockTraker, 0) + 1);
-                        cachedAmounts.put(playerUUID, playerCache);
+                    if (allBlocksTraker != null && pdc.has(allBlocksTraker.getItemKey())) {
+                        cachedAmounts.computeIfAbsent(playerUUID, k -> new HashMap<>())
+                                .merge(allBlocksTraker, 1, Integer::sum);
                     }
                 }).bindWith(consumer);
 

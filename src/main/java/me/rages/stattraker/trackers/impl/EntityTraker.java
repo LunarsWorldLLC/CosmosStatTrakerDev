@@ -39,6 +39,16 @@ public class EntityTraker extends Traker {
         setDataLore(plugin.getConfig().getString("stat-trak-entities." + entityType + ".trak-lore"));
         setPrefixLore(Text.colorize(getDataLore().split("%amount%")[0]));
         this.colorizedDataLore = Text.colorize(getDataLore());
+
+        // Optional item allow-list — when present, restricts which weapons this tracker can attach to.
+        // Absent (or empty) falls back to the plugin-wide valid-items list in the click handler.
+        plugin.getConfig().getStringList("stat-trak-entities." + entityType + ".items").stream()
+                .map(str -> {
+                    try { return Material.valueOf(str.toUpperCase()); }
+                    catch (IllegalArgumentException e) { return null; }
+                })
+                .filter(java.util.Objects::nonNull)
+                .forEach(material -> getAcceptableItems().add(material));
     }
 
     public static EntityTraker create(String entityType, StatTrakPlugin plugin) {

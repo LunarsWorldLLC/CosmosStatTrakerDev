@@ -61,6 +61,39 @@ stat-trak-entities:
     item-lore:
       - "&7Click this item on top of a sword, axe, or spear to start tracking stats."
     trak-lore: "&bStacked Mobs Killed: &f%amount%"
+  ALL_MOBS:
+    item-name: "&7[&c&lALL MOBS TRAKER &7]"
+    item-lore:
+      - "&7Click this item on top of a weapon to start tracking stats."
+      - ""
+      - "&f&lValid Items:"
+      - "&7- Bow, Crossbow, Trident, Mace"
+      - "&7- Sword, Axe, Spear"
+    trak-lore: "&cMobs Killed: &f%amount%"
+    items:
+      - BOW
+      - CROSSBOW
+      - TRIDENT
+      - MACE
+      - WOODEN_SWORD
+      - STONE_SWORD
+      - IRON_SWORD
+      - GOLDEN_SWORD
+      - DIAMOND_SWORD
+      - NETHERITE_SWORD
+      - WOODEN_AXE
+      - STONE_AXE
+      - IRON_AXE
+      - GOLDEN_AXE
+      - DIAMOND_AXE
+      - NETHERITE_AXE
+      - WOODEN_SPEAR
+      - STONE_SPEAR
+      - COPPER_SPEAR
+      - IRON_SPEAR
+      - GOLDEN_SPEAR
+      - DIAMOND_SPEAR
+      - NETHERITE_SPEAR
   ZOMBIE:
     item-name: "&7[&b&lZOMBIE TRAKER &7]"
     item-lore:
@@ -124,6 +157,34 @@ stat-trak-augments:
     trak-lore: "&cPlayers Killed: &f%amount%"
 
 stat-trak-blocks:
+  ALL_BLOCKS:
+    item-name: "&7[&e&lALL BLOCKS TRAKER &7]"
+    item-lore:
+      - "&7Click this item on top of a tool to start tracking stats."
+      - ""
+      - "&f&lValid Items:"
+      - "&7- Pickaxe, Shovel, Axe"
+    trak-lore: "&eBlocks Mined: &f%amount%"
+    types: []
+    items:
+      - WOODEN_PICKAXE
+      - STONE_PICKAXE
+      - IRON_PICKAXE
+      - GOLDEN_PICKAXE
+      - DIAMOND_PICKAXE
+      - NETHERITE_PICKAXE
+      - WOODEN_SHOVEL
+      - STONE_SHOVEL
+      - IRON_SHOVEL
+      - GOLDEN_SHOVEL
+      - DIAMOND_SHOVEL
+      - NETHERITE_SHOVEL
+      - WOODEN_AXE
+      - STONE_AXE
+      - IRON_AXE
+      - GOLDEN_AXE
+      - DIAMOND_AXE
+      - NETHERITE_AXE
   IRON_ORE:
     item-name: "&7[&d&lIRON TRAKER &7]"
     item-lore:
