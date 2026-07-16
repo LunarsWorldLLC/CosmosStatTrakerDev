@@ -863,10 +863,14 @@ public class StatTrakManager implements TerminableModule {
 
             Traker traker = entityTrakerMap.get(key.getKey().toUpperCase());
 
-            if (key.equals(bossMobTraker.getItemKey())) {
+            if (bossMobTraker != null && key.equals(bossMobTraker.getItemKey())) {
                 traker = bossMobTraker;
             } else if (key.equals(stackerTracker.getItemKey())) {
                 traker = stackerTracker;
+            } else if (key.equals(allMobsTraker.getItemKey())) {
+                traker = allMobsTraker;
+            } else if (allBlocksTraker != null && key.equals(allBlocksTraker.getItemKey())) {
+                traker = allBlocksTraker;
             } else if (key.equals(fishStreakTraker.getItemKey())) {
                 traker = fishStreakTraker;
             } else if (traker == null && armorTrakerMap.containsKey(key.getKey().toUpperCase())) {
