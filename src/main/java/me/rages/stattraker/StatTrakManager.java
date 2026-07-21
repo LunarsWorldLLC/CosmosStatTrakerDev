@@ -862,8 +862,8 @@ public class StatTrakManager implements TerminableModule {
             lore = new ArrayList<>(newItem.getItemMeta().getLore()); // Ensure it's mutable
         }
 
-        // Add the new lore entry
-        lore.add(Text.colorize(traker.getDataLore().replace("%amount%", "0")));
+        // Add the new lore entry — use renderLine so both %color% (level 1) and %amount% resolve.
+        lore.add(traker.renderLine(1, 0));
         ItemMeta itemMeta = newItem.hasItemMeta() ? newItem.getItemMeta() : Bukkit.getItemFactory().getItemMeta(newItem.getType());
 
         // Modify the item's meta
