@@ -19,9 +19,6 @@ import java.util.logging.Level;
 
 public class BossMobTraker extends Traker {
 
-    // Colorized once at load so incrementLore does not re-run Text.colorize per call.
-    private final String colorizedDataLore;
-
     public BossMobTraker(StatTrakPlugin plugin) {
 
         ItemStackBuilder builder = ItemStackBuilder.of(Material.NAME_TAG)
@@ -40,7 +37,7 @@ public class BossMobTraker extends Traker {
         setItemKey(new NamespacedKey(plugin, "BOSSMOB"));
         setDataLore(plugin.getConfig().getString("stat-trak-bossmob.trak-lore"));
         setPrefixLore(Text.colorize(getDataLore().split("%amount%")[0]));
-        this.colorizedDataLore = Text.colorize(getDataLore());
+        initLevelSupport(plugin);
     }
 
     public static BossMobTraker create(StatTrakPlugin plugin) {
@@ -57,15 +54,15 @@ public class BossMobTraker extends Traker {
         container.set(key, PersistentDataType.INTEGER, total);
 
         // Rebuild only the tracker line; skip meta.setLore when nothing actually changed.
+        int level = getLevel(meta);
         List<String> lore = meta.getLore();
         if (lore != null) {
-            String prefix = getPrefixLore();
             String newLine = null;
             boolean changed = false;
             for (int i = 0; i < lore.size(); i++) {
-                if (lore.get(i).startsWith(prefix)) {
+                if (matchesLine(lore.get(i))) {
                     if (newLine == null) {
-                        newLine = colorizedDataLore.replace("%amount%", String.format("%,d", total));
+                        newLine = renderLine(level, total);
                     }
                     if (!newLine.equals(lore.get(i))) {
                         lore.set(i, newLine);

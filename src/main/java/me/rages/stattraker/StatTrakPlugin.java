@@ -9,7 +9,9 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Plugin(
@@ -26,6 +28,10 @@ public final class StatTrakPlugin extends ExtendedJavaPlugin {
     private ItemStack removerItemStack;
     public static Set<NamespacedKey> TRACKER_KEYS = new HashSet<>();
 
+    // Indexed 1..maxLevel; index 0 unused so level numbers map directly to array slots.
+    private String[] levelColors;
+    private int maxLevel;
+
     private final ImmutableSet<Material> validItems = ImmutableSet.of(
             Material.DIAMOND_AXE, Material.NETHERITE_AXE, Material.IRON_AXE,
             Material.DIAMOND_SWORD, Material.NETHERITE_SWORD, Material.IRON_SWORD,
@@ -41,6 +47,7 @@ public final class StatTrakPlugin extends ExtendedJavaPlugin {
         TRACKER_KEYS.clear();
         this.statTrakItemKey = new NamespacedKey(this, ITEM_KEY);
         this.saveDefaultConfig();
+        loadLevelPalette();
         this.bindModule(new StatTrakManager(this));
 
         this.removerItemStack = ItemStackBuilder.of(Material.valueOf(getConfig().getString("stack-trak-remover.type")))
@@ -48,6 +55,30 @@ public final class StatTrakPlugin extends ExtendedJavaPlugin {
                 .lore(getConfig().getStringList("stack-trak-remover.lore"))
                 .build();
 
+    }
+
+    private void loadLevelPalette() {
+        this.maxLevel = getConfig().getInt("stat-trak-levels.max-level", 5);
+        if (maxLevel < 1) maxLevel = 1;
+        this.levelColors = new String[maxLevel + 1];
+        List<String> defaults = new ArrayList<>();
+        defaults.add("&b"); defaults.add("&c"); defaults.add("&6"); defaults.add("&e"); defaults.add("&6&l");
+        for (int i = 1; i <= maxLevel; i++) {
+            String fromConfig = getConfig().getString("stat-trak-levels.colors." + i);
+            levelColors[i] = fromConfig != null ? fromConfig
+                    : (i - 1 < defaults.size() ? defaults.get(i - 1) : "&b");
+        }
+    }
+
+    /** Returns the color code (may include multiple &-codes) for the given tracker level. Clamps to [1, maxLevel]. */
+    public String getLevelColor(int level) {
+        if (level < 1) level = 1;
+        if (level > maxLevel) level = maxLevel;
+        return levelColors[level];
+    }
+
+    public int getMaxLevel() {
+        return maxLevel;
     }
 
     public ItemStack getRemoverItemStack() {

@@ -21,10 +21,6 @@ import java.util.logging.Level;
  **/
 public class EntityTraker extends Traker {
 
-    // Colorized once at load so the hot path (incrementLore) does not re-run Text.colorize
-    // per call. The current lore line is rebuilt by replacing %amount% in this template.
-    private final String colorizedDataLore;
-
     public EntityTraker(String entityType, StatTrakPlugin plugin) {
         if (!plugin.getConfig().contains("stat-trak-entities." + entityType + ".item-name")) {
             plugin.getLogger().log(Level.WARNING, String.format("Could not find %s in config", entityType));
@@ -38,7 +34,7 @@ public class EntityTraker extends Traker {
         setItemKey(new NamespacedKey(plugin, entityType));
         setDataLore(plugin.getConfig().getString("stat-trak-entities." + entityType + ".trak-lore"));
         setPrefixLore(Text.colorize(getDataLore().split("%amount%")[0]));
-        this.colorizedDataLore = Text.colorize(getDataLore());
+        initLevelSupport(plugin);
 
         // Optional item allow-list — when present, restricts which weapons this tracker can attach to.
         // Absent (or empty) falls back to the plugin-wide valid-items list in the click handler.
@@ -57,13 +53,14 @@ public class EntityTraker extends Traker {
 
     public ItemStack incrementPlayerLore(ItemStack itemStack, int amount) {
         int total = itemStack.getItemMeta().getPersistentDataContainer().get(getItemKey(), PersistentDataType.INTEGER) + amount;
+        int level = getLevel(itemStack);
         ItemStackBuilder builder = ItemStackBuilder.of(itemStack);
         builder.transformMeta(meta -> meta.getPersistentDataContainer().set(getItemKey(), PersistentDataType.INTEGER, total));
         List<String> oldItemLore = itemStack.getItemMeta().getLore();
         builder.clearLore();
         builder.unflag(ItemFlag.HIDE_ENCHANTS);
-        oldItemLore.stream().filter(currLore -> !currLore.startsWith(getPrefixLore())).forEach(builder::lore);
-        builder.lore(getDataLore().replace("%amount%", String.format("%,d", total)));
+        oldItemLore.stream().filter(currLore -> !matchesLine(currLore)).forEach(builder::lore);
+        builder.lore(renderLine(level, total));
         return builder.build();
     }
 
@@ -78,15 +75,15 @@ public class EntityTraker extends Traker {
 
         // Rebuild only the tracker line; skip meta.setLore (the Paper hot path that runs
         // CraftChatMessage.fromString regex on every line) when nothing actually changed.
+        int level = getLevel(meta);
         List<String> lore = meta.getLore();
         if (lore != null) {
-            String prefix = getPrefixLore();
             String newLine = null;
             boolean changed = false;
             for (int i = 0; i < lore.size(); i++) {
-                if (lore.get(i).startsWith(prefix)) {
+                if (matchesLine(lore.get(i))) {
                     if (newLine == null) {
-                        newLine = colorizedDataLore.replace("%amount%", String.format("%,d", total));
+                        newLine = renderLine(level, total);
                     }
                     if (!newLine.equals(lore.get(i))) {
                         lore.set(i, newLine);

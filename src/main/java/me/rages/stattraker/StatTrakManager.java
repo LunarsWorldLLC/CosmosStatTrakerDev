@@ -497,8 +497,22 @@ public class StatTrakManager implements TerminableModule {
 
                             if (traker != null) {
 
+                                // Already tracked — bump the level instead of rejecting.
                                 if (current.hasItemMeta() && current.getItemMeta().getPersistentDataContainer().has(traker.getItemKey())) {
-                                    player.sendMessage(Text.colorize(plugin.getConfig().getString("messages.already-exist")));
+                                    int currentLevel = traker.getLevel(current);
+                                    int max = traker.getMaxLevel();
+                                    if (currentLevel >= max) {
+                                        player.sendMessage(Text.colorize(plugin.getConfig().getString("messages.max-level",
+                                                plugin.getConfig().getString("messages.already-exist"))));
+                                        return;
+                                    }
+                                    event.setCancelled(true);
+                                    if (player.getItemOnCursor().getAmount() == 1) {
+                                        player.setItemOnCursor(null);
+                                    } else {
+                                        player.getItemOnCursor().setAmount(cursor.getAmount() - 1);
+                                    }
+                                    event.setCurrentItem(bumpTrakerLevel(traker, current, currentLevel + 1));
                                     return;
                                 }
 
@@ -825,6 +839,19 @@ public class StatTrakManager implements TerminableModule {
         return false; // weapon not held — keep accumulating, retry next flush
     }
 
+    /**
+     * Write a new level onto the item and rebuild the tracker's counter line so the color
+     * reflects the new level. Called when the player applies an additional tracker of the
+     * same type onto an item that already carries it.
+     */
+    private ItemStack bumpTrakerLevel(Traker traker, ItemStack item, int newLevel) {
+        if (item == null || !item.hasItemMeta()) return item;
+        ItemMeta meta = item.getItemMeta();
+        traker.setLevel(meta, newLevel);
+        item.setItemMeta(meta);
+        return traker.rewriteTrakerLine(item);
+    }
+
     private ItemStack addTrakerToItem(Traker traker, ItemStack itemStack) {
         // Clone the original ItemStack to avoid modifying it directly
         ItemStack newItem = itemStack.clone();
@@ -890,14 +917,19 @@ public class StatTrakManager implements TerminableModule {
                 return null; // If no tracker is found, return null
             }
 
-            // Remove the tracker key from the persistent data container
+            // Remove the tracker key from the persistent data container.
             persistentDataContainer.remove(key);
+            // Also strip the companion level key so removing + reapplying starts back at L1.
+            if (traker.getLevelKey() != null) {
+                persistentDataContainer.remove(traker.getLevelKey());
+            }
 
-            // Update the item's lore by removing the tracker-specific lore
+            // Update the item's lore by removing the tracker-specific lore.
+            // Match via traker.matchesLine (color-stripped) so leveled-up lines still match.
             List<String> oldLore = itemMeta.hasLore() ? itemMeta.getLore() : new ArrayList<>();
             List<String> updatedLore = new ArrayList<>();
             for (String lore : oldLore) {
-                if (!lore.startsWith(traker.getPrefixLore())) {
+                if (!traker.matchesLine(lore)) {
                     updatedLore.add(lore);
                 }
             }

@@ -43,6 +43,7 @@ public class BlockTraker extends Traker {
         setItemKey(new NamespacedKey(plugin, key));
         setDataLore(plugin.getConfig().getString("stat-trak-blocks." + key + ".trak-lore"));
         setPrefixLore(Text.colorize(getDataLore().split("%amount%")[0]));
+        initLevelSupport(plugin);
     }
 
     public static BlockTraker create(String key, StatTrakPlugin plugin) {
@@ -51,14 +52,15 @@ public class BlockTraker extends Traker {
 
     public ItemStack incrementLore(ItemStack itemStack, int amount) {
         int total = itemStack.getItemMeta().getPersistentDataContainer().get(getItemKey(), PersistentDataType.INTEGER) + amount;
+        int level = getLevel(itemStack);
         ItemStackBuilder builder = ItemStackBuilder.of(itemStack);
         builder.transformMeta(meta -> meta.getPersistentDataContainer().set(getItemKey(), PersistentDataType.INTEGER, total));
         List<String> oldItemLore = itemStack.getItemMeta().getLore();
         builder.clearLore();
         builder.unflag(ItemFlag.HIDE_ENCHANTS);
         oldItemLore.forEach(currLore -> {
-            if (currLore.startsWith(getPrefixLore())) {
-                builder.lore(getDataLore().replace("%amount%", String.format("%,d", total)));
+            if (matchesLine(currLore)) {
+                builder.lore(renderLine(level, total));
             } else {
                 builder.lore(currLore);
             }

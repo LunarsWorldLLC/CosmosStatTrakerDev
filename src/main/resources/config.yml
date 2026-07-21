@@ -1,11 +1,24 @@
 settings:
   use-slayer-trackers: true
 
+# Tracker leveling — applying the same tracker to an already-tracked item bumps its level (1..max-level).
+# The %color% placeholder in any tracker's trak-lore is replaced with the color for the current level.
+# Remover strips the tracker entirely and always returns a single base (level 1) tracker item.
+stat-trak-levels:
+  max-level: 5
+  colors:
+    1: "&b"
+    2: "&c"
+    3: "&6"
+    4: "&e"
+    5: "&6&l"
+
 messages:
   traker-removed: "&d&lCOSMIC &8&l▶ &7You have removed tracker from item in hand."
   traker-received: "&d&lCOSMIC &8&l▶ &7You have received %amount%x Entity Trackers."
   traker-given: "&d&lCOSMIC &8&l▶ &7You have given &d%amount%x Entity Tracker's &7to &d%player%&7."
   already-exist: "&eStat traker already exist on this item."
+  max-level: "&cThis tracker is already at max level."
   invalid-item: "&cYou cannot apply stat traker to this item."
 
 stack-trak-remover:
