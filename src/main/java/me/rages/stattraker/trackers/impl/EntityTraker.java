@@ -9,7 +9,6 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.List;
@@ -66,36 +65,7 @@ public class EntityTraker extends Traker {
 
     public ItemStack incrementLore(ItemStack itemStack, int amount) {
         ItemMeta meta = itemStack.getItemMeta();
-
-        // Increment the persistent data value
-        NamespacedKey key = getItemKey();
-        PersistentDataContainer container = meta.getPersistentDataContainer();
-        int total = container.getOrDefault(key, PersistentDataType.INTEGER, 0) + amount;
-        container.set(key, PersistentDataType.INTEGER, total);
-
-        // Rebuild only the tracker line; skip meta.setLore (the Paper hot path that runs
-        // CraftChatMessage.fromString regex on every line) when nothing actually changed.
-        int level = getLevel(meta);
-        List<String> lore = meta.getLore();
-        if (lore != null) {
-            String newLine = null;
-            boolean changed = false;
-            for (int i = 0; i < lore.size(); i++) {
-                if (matchesLine(lore.get(i))) {
-                    if (newLine == null) {
-                        newLine = renderLine(level, total);
-                    }
-                    if (!newLine.equals(lore.get(i))) {
-                        lore.set(i, newLine);
-                        changed = true;
-                    }
-                }
-            }
-            if (changed) {
-                meta.setLore(lore);
-            }
-        }
-
+        incrementLore(meta, amount);
         itemStack.setItemMeta(meta);
         return itemStack;
     }

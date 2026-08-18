@@ -2,6 +2,7 @@ package me.rages.stattraker;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
+import io.papermc.paper.persistence.PersistentDataContainerView;
 import me.lucko.helper.Commands;
 import me.lucko.helper.Events;
 import me.lucko.helper.Schedulers;
@@ -361,16 +362,13 @@ public class StatTrakManager implements TerminableModule {
                     UUID id = player.getUniqueId();
                     int finalDamage = (int) event.getFinalDamage();
                     Arrays.stream(armorSlots).map(equipmentSlot -> player.getInventory().getItem(equipmentSlot))
-                            .filter(itemStack -> itemStack.hasItemMeta()).forEach(itemStack -> {
-                                ItemMeta meta = itemStack.getItemMeta();
-                                armorTrakerMap.values().stream()
-                                        .filter(traker -> meta.getPersistentDataContainer().has(traker.getItemKey()))
-                                        .forEach(traker -> {
-                                            int delta = traker.isHits() ? 1 : finalDamage;
-                                            cachedArmorAmounts.computeIfAbsent(id, k -> new HashMap<>())
-                                                    .merge(traker, delta, Integer::sum);
-                                        });
-                            });
+                            .forEach(itemStack -> armorTrakerMap.values().stream()
+                                    .filter(traker -> hasTrackerKey(itemStack, traker))
+                                    .forEach(traker -> {
+                                        int delta = traker.isHits() ? 1 : finalDamage;
+                                        cachedArmorAmounts.computeIfAbsent(id, k -> new HashMap<>())
+                                                .merge(traker, delta, Integer::sum);
+                                    }));
 
                 }).bindWith(consumer);
 
@@ -426,8 +424,8 @@ public class StatTrakManager implements TerminableModule {
                 .handler(event -> {
                     Player player = event.getPlayer();
                     ItemStack previous = player.getInventory().getItem(event.getPreviousSlot());
-                    if (previous == null || !previous.hasItemMeta()) return;
-                    PersistentDataContainer pdc = previous.getItemMeta().getPersistentDataContainer();
+                    if (previous == null || previous.getType().isAir()) return;
+                    PersistentDataContainerView pdc = previous.getPersistentDataContainer();
 
                     Map<EntityTraker, Integer> pendingEntity = cachedEntityKills.get(player.getUniqueId());
                     if (pendingEntity != null && !pendingEntity.isEmpty()) {
@@ -443,7 +441,7 @@ public class StatTrakManager implements TerminableModule {
                         if (current != previous) {
                             player.getInventory().setItem(event.getPreviousSlot(), current);
                             // re-read pdc since meta changed
-                            pdc = current.getItemMeta().getPersistentDataContainer();
+                            pdc = current.getPersistentDataContainer();
                         }
                         if (pendingEntity.isEmpty()) cachedEntityKills.remove(player.getUniqueId());
                     }
@@ -567,10 +565,10 @@ public class StatTrakManager implements TerminableModule {
                 .handler(event -> {
                     Player player = event.getEntity().getKiller();
                     ItemStack itemStack = player.getInventory().getItemInMainHand();
-                    if (itemStack == null || !itemStack.hasItemMeta()) return;
+                    if (itemStack == null || itemStack.getType().isAir()) return;
 
                     UUID id = player.getUniqueId();
-                    PersistentDataContainer pdc = itemStack.getItemMeta().getPersistentDataContainer();
+                    PersistentDataContainerView pdc = itemStack.getPersistentDataContainer();
                     EntityType type = event.getEntity().getType();
 
                     if (slayerBossKey != null && bossMobTraker != null
@@ -636,8 +634,8 @@ public class StatTrakManager implements TerminableModule {
                 .handler(event -> {
                     Player player = event.getPlayer();
                     ItemStack itemStack = player.getInventory().getItemInMainHand();
-                    if (!itemStack.hasItemMeta()) return;
-                    PersistentDataContainer pdc = itemStack.getItemMeta().getPersistentDataContainer();
+                    if (itemStack.getType().isAir()) return;
+                    PersistentDataContainerView pdc = itemStack.getPersistentDataContainer();
                     UUID playerUUID = player.getUniqueId();
 
                     BlockTraker blockTraker = blockTrakerMap.get(event.getBlock().getType());
@@ -661,8 +659,7 @@ public class StatTrakManager implements TerminableModule {
                     ItemStack itemStack = player.getInventory().getItem(event.getPreviousSlot());
 
                     cachedAmounts.get(player.getUniqueId()).entrySet().stream()
-                            .filter(entry -> itemStack.hasItemMeta() && itemStack.getItemMeta()
-                                    .getPersistentDataContainer().has(entry.getKey().getItemKey()))
+                            .filter(entry -> hasTrackerKey(itemStack, entry.getKey()))
                             .forEach(entry -> player.getInventory().setItemInMainHand(entry.getKey().incrementLore(
                                     itemStack,
                                     entry.getValue())
@@ -678,8 +675,7 @@ public class StatTrakManager implements TerminableModule {
                     ItemStack itemStack = player.get().getInventory().getItemInMainHand();
                     if (itemStack != null) {
                         cachedAmounts.get(player.get().getUniqueId()).entrySet().stream()
-                                .filter(entry -> itemStack.hasItemMeta() && itemStack.getItemMeta()
-                                        .getPersistentDataContainer().has(entry.getKey().getItemKey()))
+                                .filter(entry -> hasTrackerKey(itemStack, entry.getKey()))
                                 .forEach(entry -> player.get().getInventory().setItemInMainHand(
                                                 entry.getKey().incrementLore(itemStack, entry.getValue())
                                         )
@@ -748,8 +744,7 @@ public class StatTrakManager implements TerminableModule {
     }
 
     private boolean hasArrowTracker(ItemStack itemStack) {
-        return itemStack != null && itemStack.hasItemMeta()
-                && itemStack.getItemMeta().getPersistentDataContainer().has(arrowShotTraker.getItemKey());
+        return hasTrackerKey(itemStack, arrowShotTraker);
     }
 
     /**
@@ -770,8 +765,7 @@ public class StatTrakManager implements TerminableModule {
             }
             for (EquipmentSlot slot : armorSlots) {
                 ItemStack item = player.getInventory().getItem(slot);
-                if (item != null && item.hasItemMeta()
-                        && item.getItemMeta().getPersistentDataContainer().has(traker.getItemKey())) {
+                if (hasTrackerKey(item, traker)) {
                     player.getInventory().setItem(slot, traker.incrementLore(item, amount));
                     it.remove();
                     break;
@@ -788,33 +782,36 @@ public class StatTrakManager implements TerminableModule {
     private void flushEntityKills(Player player, Map<EntityTraker, Integer> pending) {
         if (pending.isEmpty()) return;
         ItemStack main = player.getInventory().getItemInMainHand();
+        if (applyPendingKills(main, pending)) player.getInventory().setItemInMainHand(main);
+        if (pending.isEmpty()) return;
         ItemStack off = player.getInventory().getItemInOffHand();
-        boolean mainChanged = false;
-        boolean offChanged = false;
+        if (applyPendingKills(off, pending)) player.getInventory().setItemInOffHand(off);
+    }
 
+    /**
+     * Apply every pending tracker present on this item in a single meta round-trip.
+     * Membership is checked through the item's PDC view first, so the common retry case
+     * (weapon stashed, nothing matches) never constructs an ItemMeta at all.
+     * Applied entries are removed from the map; returns true if the item was modified.
+     */
+    private boolean applyPendingKills(ItemStack item, Map<EntityTraker, Integer> pending) {
+        if (item == null || item.getType().isAir()) return false;
+        PersistentDataContainerView view = item.getPersistentDataContainer();
+        ItemMeta meta = null;
         Iterator<Map.Entry<EntityTraker, Integer>> it = pending.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<EntityTraker, Integer> entry = it.next();
-            EntityTraker traker = entry.getKey();
-            int amount = entry.getValue();
-            if (amount <= 0) {
+            if (entry.getValue() <= 0) {
                 it.remove();
                 continue;
             }
-            if (main != null && main.hasItemMeta()
-                    && main.getItemMeta().getPersistentDataContainer().has(traker.getItemKey())) {
-                main = traker.incrementLore(main, amount);
-                mainChanged = true;
-                it.remove();
-            } else if (off != null && off.hasItemMeta()
-                    && off.getItemMeta().getPersistentDataContainer().has(traker.getItemKey())) {
-                off = traker.incrementLore(off, amount);
-                offChanged = true;
-                it.remove();
-            }
+            if (!view.has(entry.getKey().getItemKey())) continue;
+            if (meta == null) meta = item.getItemMeta();
+            entry.getKey().incrementLore(meta, entry.getValue());
+            it.remove();
         }
-        if (mainChanged) player.getInventory().setItemInMainHand(main);
-        if (offChanged) player.getInventory().setItemInOffHand(off);
+        if (meta != null) item.setItemMeta(meta);
+        return meta != null;
     }
 
     /**
@@ -825,18 +822,22 @@ public class StatTrakManager implements TerminableModule {
     private boolean flushBossKills(Player player, int amount) {
         if (amount <= 0 || bossMobTraker == null) return true;
         ItemStack main = player.getInventory().getItemInMainHand();
-        if (main != null && main.hasItemMeta()
-                && main.getItemMeta().getPersistentDataContainer().has(bossMobTraker.getItemKey())) {
+        if (hasTrackerKey(main, bossMobTraker)) {
             player.getInventory().setItemInMainHand(bossMobTraker.incrementLore(main, amount));
             return true;
         }
         ItemStack off = player.getInventory().getItemInOffHand();
-        if (off != null && off.hasItemMeta()
-                && off.getItemMeta().getPersistentDataContainer().has(bossMobTraker.getItemKey())) {
+        if (hasTrackerKey(off, bossMobTraker)) {
             player.getInventory().setItemInOffHand(bossMobTraker.incrementLore(off, amount));
             return true;
         }
         return false; // weapon not held — keep accumulating, retry next flush
+    }
+
+    /** Tracker presence check through the item's PDC view — no ItemMeta construction. */
+    private boolean hasTrackerKey(ItemStack item, Traker traker) {
+        return item != null && !item.getType().isAir()
+                && item.getPersistentDataContainer().has(traker.getItemKey());
     }
 
     /**

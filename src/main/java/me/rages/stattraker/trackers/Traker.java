@@ -7,6 +7,7 @@ import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.HashSet;
@@ -124,6 +125,38 @@ public class Traker {
 
     public int getMaxLevel() {
         return plugin != null ? plugin.getMaxLevel() : 5;
+    }
+
+    /**
+     * Increment this tracker's stored total and rebuild its counter line against a
+     * caller-supplied meta; the caller performs the single setItemMeta. Lets one meta
+     * round-trip carry several trackers' updates on the same item.
+     */
+    public void incrementLore(ItemMeta meta, int amount) {
+        PersistentDataContainer container = meta.getPersistentDataContainer();
+        int total = container.getOrDefault(itemKey, PersistentDataType.INTEGER, 0) + amount;
+        container.set(itemKey, PersistentDataType.INTEGER, total);
+
+        int level = getLevel(meta);
+        List<String> lore = meta.getLore();
+        if (lore != null) {
+            String newLine = null;
+            boolean changed = false;
+            for (int i = 0; i < lore.size(); i++) {
+                if (matchesLine(lore.get(i))) {
+                    if (newLine == null) {
+                        newLine = renderLine(level, total);
+                    }
+                    if (!newLine.equals(lore.get(i))) {
+                        lore.set(i, newLine);
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                meta.setLore(lore);
+            }
+        }
     }
 
     /**
